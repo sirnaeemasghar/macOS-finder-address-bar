@@ -1,0 +1,24 @@
+# macOS metadata
+.DS_Store
+._*
+
+# Generated app and compiler/test output
+*.app/
+.build-cache/
+.build/
+.swiftpm/
+DerivedData/
+*.dSYM/
+
+# Local diagnostics and distributable archives
+status.txt
+*.log
+*.zip
+*.dmg
+
+# Local configuration and signing material
+.env
+.env.*
+*.p12
+*.pfx
+*.mobileprovision
