@@ -6,9 +6,9 @@ Click the current folder to edit its path, navigate through clickable breadcrumb
 
 ## See it in action
 
-[![Watch Finder Address Bar in action on YouTube](https://img.youtube.com/vi/-PFp8Z7WMU0/hqdefault.jpg)](https://www.youtube.com/watch?v=-PFp8Z7WMU0)
+https://github.com/user-attachments/assets/cd8eb267-39d4-40e5-b450-a1c2fd3660e1
 
-**Click the preview above to watch the narrated demo on YouTube.**
+Play the demo directly above, or [watch on YouTube](https://www.youtube.com/watch?v=-PFp8Z7WMU0).
 
 > **Development preview:** this is a separate overlay, not an embedded Finder toolbar extension. It requires Accessibility and Automation permissions. Custom toolbar layouts and full-screen transitions may need further testing.
 
