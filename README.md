@@ -4,6 +4,12 @@ A lightweight native macOS utility that adds a Windows-style address field over 
 
 Click the current folder to edit its path, navigate through clickable breadcrumbs, or open Terminal in the current folder. The field uses Finder’s toolbar positions to fit between its navigation buttons and other controls.
 
+## See it in action
+
+[![Watch Finder Address Bar in action on YouTube](https://img.youtube.com/vi/-PFp8Z7WMU0/hqdefault.jpg)](https://www.youtube.com/watch?v=-PFp8Z7WMU0)
+
+**Click the preview above to watch the narrated demo on YouTube.**
+
 > **Development preview:** this is a separate overlay, not an embedded Finder toolbar extension. It requires Accessibility and Automation permissions. Custom toolbar layouts and full-screen transitions may need further testing.
 
 ## Features
