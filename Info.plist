@@ -5,8 +5,8 @@
 <key>CFBundleIdentifier</key><string>local.naeem.FinderAddressBar</string>
 <key>CFBundleName</key><string>Finder Address Bar</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>1.0</string>
-<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleShortVersionString</key><string>1.0.1</string>
+<key>CFBundleVersion</key><string>2</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>LSUIElement</key><true/>
 <key>NSAppleEventsUsageDescription</key><string>Finder Address Bar reads the current Finder folder and window position and opens folders you choose, and asks Terminal to start in the current folder.</string>

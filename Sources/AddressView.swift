@@ -8,7 +8,9 @@ final class BarButton: NSButton {
         super.init(frame: .zero)
         self.title = title
         if let symbol { image = NSImage(systemSymbolName: symbol, accessibilityDescription: title); imagePosition = .imageOnly }
-        isBordered = false; font = .systemFont(ofSize: 12)
+        isBordered = false
+        font = .systemFont(ofSize: 13, weight: .medium)
+        contentTintColor = .secondaryLabelColor
         target = self; self.action = #selector(run); invoke = action
         registerForDraggedTypes([.fileURL])
         setAccessibilityLabel(title)
@@ -32,6 +34,9 @@ struct BarView: NSViewRepresentable {
 }
 
 final class AddressView: NSView, NSTextFieldDelegate, NSMenuDelegate {
+    static let shadowPadding: CGFloat = 12
+    let backdrop = NSVisualEffectView()
+    let tint = CALayer()
     let model: BarModel
     let combo = NSTextField()
     var elements: [NSView] = []
@@ -40,15 +45,24 @@ final class AddressView: NSView, NSTextFieldDelegate, NSMenuDelegate {
     var queued: DispatchWorkItem?
     var suggestionGeneration = 0
     var suggestions: [String] = []
+    var pillRect: NSRect { bounds.insetBy(dx: Self.shadowPadding, dy: Self.shadowPadding) }
     init(model: BarModel) {
         self.model = model
         super.init(frame: NSRect(x: 0, y: 0, width: 350, height: 32))
         wantsLayer = true
-        layer?.cornerRadius = 18
-        layer?.masksToBounds = true
+        layer?.masksToBounds = false
+        backdrop.material = .popover
+        backdrop.blendingMode = .behindWindow
+        backdrop.state = .active
+        backdrop.wantsLayer = true
+        backdrop.layer?.masksToBounds = true
+        backdrop.layer?.addSublayer(tint)
+        addSubview(backdrop)
         combo.delegate = self
         combo.isEditable = true
-        combo.font = .systemFont(ofSize: 13)
+        combo.font = .systemFont(ofSize: 13, weight: .medium)
+        combo.textColor = .labelColor
+        combo.usesSingleLineMode = true
         combo.drawsBackground = false
         combo.isBezeled = false
         combo.isSelectable = true
@@ -63,40 +77,88 @@ final class AddressView: NSView, NSTextFieldDelegate, NSMenuDelegate {
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
-    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); updateBackdrop(); needsDisplay = true }
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.controlBackgroundColor.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
-        (model.editing ? NSColor.controlAccentColor : NSColor.separatorColor).setStroke()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: bounds.height / 2, yRadius: bounds.height / 2).stroke()
+        super.draw(dirtyRect)
+        let pill = pillRect
+        guard pill.width > 0, pill.height > 0 else { return }
+        let radius = pill.height / 2
+        let pillPath = NSBezierPath(roundedRect: pill, xRadius: radius, yRadius: radius)
+
+        let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+
+        // Native toolbar button drop shadow & fill
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(isDark ? 0.35 : 0.12)
+        shadow.shadowOffset = NSSize(width: 0, height: -2.0)
+        shadow.shadowBlurRadius = 8.0
+        shadow.set()
+
+        let fillColor: NSColor
+        if model.editing {
+            fillColor = NSColor.textBackgroundColor
+        } else if isDark {
+            fillColor = NSColor(white: 0.22, alpha: 0.97)
+        } else {
+            fillColor = NSColor(white: 1.0, alpha: 0.97)
+        }
+        fillColor.setFill()
+        pillPath.fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        // Native subtle border
+        let strokeColor: NSColor
+        if model.editing {
+            strokeColor = NSColor.controlAccentColor
+        } else if isDark {
+            strokeColor = NSColor(white: 1.0, alpha: 0.16)
+        } else {
+            strokeColor = NSColor(white: 0.0, alpha: 0.12)
+        }
+        strokeColor.setStroke()
+        pillPath.lineWidth = model.editing ? 1.5 : 0.75
+        pillPath.stroke()
+    }
+    func updateBackdrop() {
+        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        tint.backgroundColor = (model.editing ? NSColor.textBackgroundColor : NSColor(white: dark ? 0.15 : 0.98, alpha: 0.98)).cgColor
+        backdrop.layer?.borderWidth = model.editing ? 1.5 : 0.75
+        backdrop.layer?.borderColor = (model.editing ? NSColor.controlAccentColor : NSColor.white.withAlphaComponent(dark ? 0.16 : 0.85)).cgColor
     }
     func edit() {
         model.text = model.folder?.path ?? ""
         model.editing = true
         update()
-        window?.makeKey()
-        window?.makeFirstResponder(combo)
-        combo.selectText(nil)
     }
-    override func mouseDown(with event: NSEvent) { edit() }
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if pillRect.contains(point) { edit() }
+    }
     func update() {
         let key = "\(model.folder?.path ?? "")|\(model.editing)|\(Int(bounds.width))|\(Int(bounds.height))|\(model.feedback)|\(model.message)"
         guard signature != key else { return }
         signature = key
-        for item in elements { item.removeFromSuperview() }
+        // Keep the active field attached during layout/feedback updates.
+        if !model.editing && wasEditing { window?.makeFirstResponder(self) }
+        for item in elements where item !== combo || !model.editing { item.removeFromSuperview() }
         elements = []
+        let pill = pillRect
         func place(_ item: NSView, x: CGFloat, width: CGFloat) {
-            item.frame = NSRect(x: x, y: (bounds.height - 22) / 2, width: width, height: 22)
+            // A text field draws at the top of its frame; use its native line height
+            // so the editing baseline stays centered like the breadcrumb buttons.
+            let height: CGFloat = item === combo ? ceil(combo.cell?.cellSize.height ?? 17) : 22
+            item.frame = NSRect(x: x, y: pill.midY - height / 2, width: width, height: height)
             if item.superview == nil { addSubview(item) }
             elements.append(item)
         }
-        var right = bounds.width - 5
+        var right = pill.maxX - 5
         let terminal = BarButton("Open Terminal here", symbol: "terminal") { [weak self] in self?.model.terminal() }
         terminal.isEnabled = model.folder != nil
         right -= 23; place(terminal, x: right, width: 23)
         let history = BarButton("Recent locations", symbol: "chevron.down") { [weak self] in self?.showChoices() }
         right -= 19; place(history, x: right, width: 19)
-        if bounds.width >= 230 && !model.editing {
+        if pill.width >= 230 && !model.editing {
             let refresh = BarButton("Refresh Finder", symbol: "arrow.clockwise") { [weak self] in self?.model.refreshFolder?() }
             right -= 21; place(refresh, x: right, width: 21)
         }
@@ -107,26 +169,27 @@ final class AddressView: NSView, NSTextFieldDelegate, NSMenuDelegate {
             error.toolTip = model.feedback; right -= 20; place(error, x: right, width: 20)
         }
         if model.editing {
-            place(combo, x: 12, width: max(30, right - 18))
+            place(combo, x: pill.minX + 12, width: max(30, right - (pill.minX + 18)))
             if !wasEditing {
                 combo.stringValue = model.text
                 DispatchQueue.main.async { [weak self] in
                     guard let self, self.model.editing else { return }
-                    self.window?.makeKey(); self.window?.makeFirstResponder(self.combo); self.combo.selectText(nil)
+                    self.window?.makeKey()
+                    self.combo.selectText(nil)
                     self.loadSuggestions()
                 }
             }
         } else {
             var parts = model.folder.map(PathLogic.ancestors) ?? []
-            let maxWidth = max(20, right - 14)
+            let maxWidth = max(20, right - (pill.minX + 14))
             func width(_ url: URL) -> CGFloat {
-                min(180, max(25, (name(url) as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width + 8)) + 17
+                min(180, max(25, (name(url) as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium)]).width + 8)) + 17
             }
             var hidden: [URL] = []
             while parts.count > 1 && parts.reduce(CGFloat(0), { $0 + width($1) }) + (hidden.isEmpty ? 0 : 22) > maxWidth {
                 hidden.append(parts.removeFirst())
             }
-            var x: CGFloat = 12
+            var x: CGFloat = pill.minX + 12
             if !hidden.isEmpty && maxWidth > 75 {
                 let saved = hidden
                 let more = BarButton("…") { [weak self] in self?.locationsMenu(saved, title: "Parent folders") }
@@ -139,6 +202,7 @@ final class AddressView: NSView, NSTextFieldDelegate, NSMenuDelegate {
                 let label = BarButton(name(part)) { [weak self] in
                     if isCurrent { self?.edit() } else { self?.model.navigate?(part) }
                 }
+                label.contentTintColor = isCurrent ? .labelColor : .secondaryLabelColor
                 label.lineBreakMode = .byTruncatingMiddle
                 label.toolTip = part.path + (isCurrent ? " — click to edit" : "")
                 label.drop = { [weak self] urls, copy in self?.model.transfer?(urls, part, copy) }
@@ -153,15 +217,31 @@ final class AddressView: NSView, NSTextFieldDelegate, NSMenuDelegate {
             if parts.isEmpty {
                 let label = BarButton("Enter folder path") { [weak self] in self?.edit() }
                 label.toolTip = model.message
-                place(label, x: 12, width: maxWidth)
+                place(label, x: pill.minX + 12, width: maxWidth)
             }
         }
         wasEditing = model.editing
+        updateBackdrop()
         needsDisplay = true
     }
-    override func layout() { super.layout(); layer?.cornerRadius = bounds.height / 2; update() }
+    override func layout() {
+        super.layout()
+        backdrop.frame = pillRect
+        backdrop.layer?.cornerRadius = pillRect.height / 2
+        tint.frame = backdrop.bounds
+        updateBackdrop()
+        update()
+    }
     func name(_ url: URL) -> String { url.path == "/" ? "/" : url.lastPathComponent }
     @objc func submit() { model.text = combo.stringValue; model.submit() }
+    func controlTextDidEndEditing(_ notification: Notification) {
+        // AppKit can end an editing session while handing off to the field editor.
+        // Only discard the draft if focus really left the field after that handoff.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.model.editing else { return }
+            if self.combo.currentEditor() == nil { self.model.endEditing() }
+        }
+    }
     func controlTextDidChange(_ obj: Notification) { model.text = combo.stringValue; loadSuggestions() }
     func loadSuggestions() {
         queued?.cancel(); suggestionGeneration += 1
@@ -192,7 +272,7 @@ final class AddressView: NSView, NSTextFieldDelegate, NSMenuDelegate {
         } else { historyMenu() }
     }
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-        if selector == #selector(NSResponder.cancelOperation(_:)) { model.editing = false; window?.makeFirstResponder(self); return true }
+        if selector == #selector(NSResponder.cancelOperation(_:)) { model.endEditing(); window?.makeFirstResponder(self); return true }
         if selector == #selector(NSResponder.insertNewline(_:)) { submit(); return true }
         if selector == #selector(NSResponder.moveDown(_:)) { showChoices(); return true }
         if selector == #selector(NSResponder.insertTab(_:)), let value = suggestions.first {
@@ -210,7 +290,7 @@ final class AddressView: NSView, NSTextFieldDelegate, NSMenuDelegate {
         if event.keyCode == 126 && flags.contains(.option), let folder = model.folder { model.navigate?(folder.deletingLastPathComponent()); return true }
         return false
     }
-    func popup(_ menu: NSMenu) { menu.popUp(positioning: nil, at: NSPoint(x: 0, y: bounds.height), in: self) }
+    func popup(_ menu: NSMenu) { menu.popUp(positioning: nil, at: NSPoint(x: pillRect.minX, y: pillRect.maxY), in: self) }
     func item(_ title: String, _ command: String, value: String? = nil) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: #selector(menuAction(_:)), keyEquivalent: "")
         item.target = self; item.representedObject = ["command": command, "value": value ?? ""]

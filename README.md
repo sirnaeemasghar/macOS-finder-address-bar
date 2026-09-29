@@ -4,6 +4,17 @@ A lightweight native macOS utility that adds a Windows-style address field over 
 
 Click the current folder to edit its path, navigate through clickable breadcrumbs, or open Terminal in the current folder. The field uses Finder’s toolbar positions to fit between its navigation buttons and other controls.
 
+## Version 1.0.1
+
+This development preview improves the address bar’s fit and finish:
+
+- Full-screen placement follows Finder’s navigation buttons without being pushed below the menu-bar area.
+- A slimmer pill, soft shadow, and frosted background blend with the toolbar and obscure the folder title underneath.
+- Native system typography and vertically centered path editing improve readability.
+- Switching Finder windows clears unfinished path edits and keeps the displayed folder synchronized.
+
+See the [changelog](CHANGELOG.md) for release history. The app remains a locally signed development preview; no Developer ID-signed or notarized installer is provided.
+
 ## See it in action
 
 https://github.com/user-attachments/assets/cd8eb267-39d4-40e5-b450-a1c2fd3660e1
@@ -14,7 +25,7 @@ Play the demo directly above, or [watch on YouTube](https://www.youtube.com/watc
 
 ## Features
 
-- Click-to-edit paths with a transparent, rounded input field—no pencil button.
+- Click-to-edit paths in a frosted, rounded field with native system typography.
 - Clickable parent folders and subfolder menus.
 - Folder suggestions, recent locations, and copy-path actions.
 - Absolute and relative paths, `~`, `..`, quoted paths, and local file URLs.
@@ -97,9 +108,9 @@ CHANGELOG.md              Development-preview changes
 
 ## Validation and limitations
 
-The current test suite has 39 checks for paths, quoting, suggestions, history, URL handling, and layout calculations. The test script also verifies the signature and property lists. Finder/Terminal permissions, actual file transfers, customized toolbar layouts, multi-display positioning, full-screen transitions, and login startup require manual testing.
+The current test suite has 57 checks for paths, quoting, suggestions, history, URL handling, and layout calculations. The test script also verifies the signature and property lists. Finder/Terminal permissions, actual file transfers, customized toolbar layouts, multi-display positioning, full-screen transitions, and login startup require manual testing.
 
-Live testing confirmed folder tracking and automatic toolbar-fit mode after approving the app. This does not guarantee compatibility with every Finder layout. Keyboard shortcuts apply while the bar has focus; they are not global Finder shortcuts. Windows drive letters, `shell:` locations, Windows executables, and arbitrary shell-command execution are not supported.
+Manual feedback confirmed full-screen alignment, background obscuring, and toolbar sizing on the development Mac. Automated checks cover the supporting geometry and editing-state logic; they do not verify visual rendering. This does not guarantee compatibility with every Finder layout. Keyboard shortcuts apply while the bar has focus; they are not global Finder shortcuts. Windows drive letters, `shell:` locations, Windows executables, and arbitrary shell-command execution are not supported.
 
 ## Contributing
 

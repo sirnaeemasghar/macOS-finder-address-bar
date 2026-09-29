@@ -26,29 +26,18 @@ enum ToolbarPlacement {
         guard depth < 5 else { return [] }
         return children(element).flatMap { [$0] + descendants($0, depth: depth + 1) }
     }
-    // WindowServer bounds remain correct when Finder's AppleScript bounds include
-    // an obsolete menu-bar offset during entry to full-screen.
-    static func visibleWindowBounds() -> CGRect? {
-        guard let finder = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first,
-              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
-        for window in windows {
-            guard (window[kCGWindowOwnerPID as String] as? Int) == Int(finder.processIdentifier),
-                  (window[kCGWindowLayer as String] as? Int) == 0,
-                  let dictionary = window[kCGWindowBounds as String] as? [String: Any],
-                  let rect = CGRect(dictionaryRepresentation: dictionary as CFDictionary), rect.width > 200, rect.height > 100 else { continue }
-            return rect
-        }
-        return nil
-    }
     static var reason = "Waiting for Finder"
+    static var debugInfo = ""
     static func current() -> CGRect? {
         reason = "Accessibility permission is missing"
         guard AXIsProcessTrusted(), let finder = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first else { return nil }
         reason = "Finder window is unavailable"
         let app = AXUIElementCreateApplication(finder.processIdentifier)
-        guard let raw = attribute(app, kAXMainWindowAttribute) ?? attribute(app, kAXFocusedWindowAttribute) ?? (attribute(app, kAXWindowsAttribute) as? [AXUIElement])?.first,
+        AXUIElementSetMessagingTimeout(app, 0.05)
+        guard let raw = attribute(app, kAXFocusedWindowAttribute) ?? attribute(app, kAXMainWindowAttribute) ?? (attribute(app, kAXWindowsAttribute) as? [AXUIElement])?.first,
               CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
         let window = raw as! AXUIElement
+        guard attribute(window, kAXMinimizedAttribute) as? Bool != true else { return nil }
         reason = "Finder toolbar is unavailable"
         guard let toolbar = descendants(window).first(where: { string($0, kAXRoleAttribute) == kAXToolbarRole }) else { return nil }
         let elements = descendants(toolbar)
@@ -65,6 +54,9 @@ enum ToolbarPlacement {
         reason = "Not enough space in Finder toolbar"
         guard let toolbarFrame = frame(toolbar), let slot = BarGeometry.slot(navigation: navigation, controls: controls, toolbar: toolbarFrame) else { return nil }
         reason = "Visible"
+        let isFS = attribute(window, "AXFullScreen") as? Bool ?? false
+        let winFrame = frame(window) ?? .zero
+        debugInfo = "nav:\(Int(navigation.minX)),\(Int(navigation.minY)),h\(Int(navigation.height)) tb:\(Int(toolbarFrame.minX)),\(Int(toolbarFrame.minY)),h\(Int(toolbarFrame.height)) slot:\(Int(slot.minX)),\(Int(slot.minY)),h\(Int(slot.height)) win:\(Int(winFrame.minX)),\(Int(winFrame.minY)),h\(Int(winFrame.height)) fs:\(isFS)"
         return slot
     }
 }

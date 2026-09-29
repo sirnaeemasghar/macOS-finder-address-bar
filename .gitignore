@@ -22,3 +22,6 @@ status.txt
 *.p12
 *.pfx
 *.mobileprovision
+
+# Temporary media editor output
+docs/media/.demo.gif-*

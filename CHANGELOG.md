@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased — development preview
+## 1.0.1 — 2026-09-29 (development preview)
+
+- Fixed full-screen address bar placement and toolbar tracking.
+- Matched Finder toolbar control height and restored a soft shadow.
+- Added a frosted background to obscure the underlying folder title.
+- Improved native typography and vertically centered editable path text.
+- Synchronized folder and editing state when switching Finder windows.
+- Expanded automated coverage to 57 checks.
+
+## 1.0 — Initial development preview
 
 - Native Apple Silicon Finder address-bar companion.
 - Adaptive toolbar placement using Accessibility geometry.

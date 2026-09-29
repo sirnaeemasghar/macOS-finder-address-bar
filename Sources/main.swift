@@ -4,51 +4,12 @@ import ServiceManagement
 import ApplicationServices
 import Combine
 
-final class BarModel: ObservableObject {
-    @Published var folder: URL?
-    @Published var message = "Connecting to Finder…"
-    @Published var feedback = ""
-    @Published var editing = false
-    @Published var text = ""
-    var navigate: ((URL) -> Void)?
-    @Published var history = UserDefaults.standard.stringArray(forKey: "recentPaths") ?? []
-    var refreshFolder: (() -> Void)?
-    var newWindow: ((URL) -> Void)?
-    var transfer: (([URL], URL, Bool) -> Void)?
-    func remember(_ url: URL) {
-        history = AddressFeatures.remember(url.path, history: history)
-        UserDefaults.standard.set(history, forKey: "recentPaths")
-    }
-    func submit() {
-        feedback = ""
-        if PathLogic.isTerminal(text) { terminal(); return }
-        if let url = AddressFeatures.externalURL(text) {
-            if NSWorkspace.shared.open(url) { editing = false }
-            else { feedback = "Could not open that address." }
-            return
-        }
-        do {
-            let url: URL
-            do { url = try AddressFeatures.localItem(text, current: folder) }
-            catch {
-                // App names, for example Safari, map to installed macOS apps.
-                if !text.contains("/"), let app = AddressFeatures.application(text) {
-                    url = app
-                } else { throw error }
-            }
-            let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isApplicationKey])
-            if values.isDirectory == true && values.isApplication != true { navigate?(url) }
-            else if !NSWorkspace.shared.open(url) { throw Failure.message("Could not open \(url.lastPathComponent).") }
-            editing = false
-        } catch { feedback = error.localizedDescription }
-    }
-    var openTerminal: (() -> Void)?
-    func terminal() { openTerminal?() }
-
-}
-
 final class Panel: NSPanel {
     var shortcut: ((NSEvent) -> Bool)?
+    // Finder supplies the position, including the hidden menu-bar area in full screen.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        frameRect
+    }
     override var canBecomeKey: Bool { true }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if shortcut?(event) == true { return true }
@@ -66,20 +27,19 @@ final class Panel: NSPanel {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let model = BarModel()
     var panel: Panel!
     var status: NSStatusItem!
     var timer: Timer?
+    var placementTimer: Timer?
     var observation: AnyCancellable?
     let queue = DispatchQueue(label: "FinderAddressBar.automation")
     var pendingScripts = 0
     var busy: Bool { pendingScripts > 0 }
     var denied = false
+    var finderToolbarVisible = false
     var loginItem: NSMenuItem!
-    var lastSlot: CGRect?
-    var lastBounds: [Int32] = []
-    var lastSlotTime = Date.distantPast
     var lastDiagnostic = ""
     func diagnostic(_ text: String) {
         guard text != lastDiagnostic else { return }
@@ -92,13 +52,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
         panel = Panel(contentRect: NSRect(x: 200, y: 400, width: 720, height: 32), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.delegate = self
+        panel.animationBehavior = .none
         panel.title = "Finder Address Bar"
         panel.isMovable = false
         panel.isMovableByWindowBackground = false
         panel.hasShadow = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.level = .statusBar
+        panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle, .canJoinAllApplications]
         let addressView = AddressView(model: model)
@@ -128,9 +90,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             catch { model.message = "Enable Launch at Login from the menu after moving the app to a permanent location." }
         }
         updateLogin()
+        if !AXIsProcessTrusted() {
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+            _ = AXIsProcessTrustedWithOptions(options)
+        }
         timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in self?.refresh() }
         RunLoop.main.add(timer!, forMode: .common)
+        placementTimer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in self?.positionPanel() }
+        RunLoop.main.add(placementTimer!, forMode: .common)
         refresh()
+    }
+    func windowDidResignKey(_ notification: Notification) { model.endEditing(); refresh() }
+    func positionPanel() {
+        let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        guard front == "com.apple.finder" || front == Bundle.main.bundleIdentifier else {
+            model.endEditing(); panel.orderOut(nil); return
+        }
+        guard finderToolbarVisible else { panel.orderOut(nil); return }
+        guard let primary = NSScreen.screens.first, let slot = ToolbarPlacement.current() else {
+            panel.orderOut(nil); diagnostic("Toolbar placement unavailable: " + ToolbarPlacement.reason); return
+        }
+
+        let pad = AddressView.shadowPadding
+        let frame = NSRect(
+            x: slot.minX - pad,
+            y: (primary.frame.maxY - slot.maxY) - pad,
+            width: slot.width + pad * 2,
+            height: slot.height + pad * 2
+        )
+        if panel.frame != frame { panel.setFrame(frame, display: true, animate: false) }
+        if !panel.isVisible { panel.orderFrontRegardless() }
+        diagnostic("Visible: \(ToolbarPlacement.debugInfo) requestedY:\(Int(frame.minY)) actualY:\(Int(panel.frame.minY))")
     }
     @discardableResult func add(_ menu: NSMenu, _ title: String, _ action: Selector) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -166,10 +156,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     func navigate(_ url: URL) {
+        model.endEditing()
         model.feedback = ""
-                script("tell application \"Finder\"\nset destination to POSIX file \(PathLogic.appleString(url.path)) as alias\nif (count of Finder windows) is 0 then\nmake new Finder window to destination\nelse\nset target of front Finder window to destination\nend if\nactivate\nend tell") { _, error in
+        script("tell application \"Finder\"\nset destination to POSIX file \(PathLogic.appleString(url.path)) as alias\nif (count of Finder windows) is 0 then\nmake new Finder window to destination\nelse\nset target of front Finder window to destination\nend if\nactivate\nend tell") { _, error in
             if let error { self.model.feedback = self.errorText(error) }
-            else { self.model.folder = url; self.model.remember(url); self.model.message = "" }
+            else { self.model.remember(url); self.refresh() }
         }
     }
     func refreshFinder() {
@@ -217,7 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 alert.messageText = "Could not open Terminal"
                 alert.informativeText = message
                 alert.runModal()
-            } else { self.model.editing = false }
+            } else { self.model.endEditing() }
         }
     }
     func errorText(_ error: NSDictionary) -> String {
@@ -233,48 +224,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !busy, !denied else { return }
         script("""
         tell application "Finder"
-            if (count of Finder windows) is 0 then return {"", 0, 0, 0, 0, 0, false}
+            if (count of Finder windows) is 0 then return {"", 0, 0, 0, 0, 0, false, 0}
             set b to bounds of front Finder window
             try
                 set p to POSIX path of (target of front Finder window as alias)
             on error
                 set p to ""
             end try
-            return {p, item 1 of b, item 2 of b, item 3 of b, item 4 of b, sidebar width of front Finder window, toolbar visible of front Finder window}
+            return {p, item 1 of b, item 2 of b, item 3 of b, item 4 of b, sidebar width of front Finder window, toolbar visible of front Finder window, id of front Finder window}
         end tell
         """) { value, error in
-            if let error { self.model.folder = nil; self.model.message = self.errorText(error); self.diagnostic(self.model.message); return }
-            guard let value, value.numberOfItems == 7 else { return }
-            let path = value.atIndex(1)?.stringValue ?? ""
-            self.model.folder = path.isEmpty ? nil : URL(fileURLWithPath: path).standardizedFileURL
-            self.model.message = path.isEmpty ? "Open a regular folder. Recents and search views have no directory path." : ""
-            guard let primary = NSScreen.screens.first else { return }
-            let left = CGFloat(value.atIndex(2)?.int32Value ?? 0)
-            let right = CGFloat(value.atIndex(4)?.int32Value ?? 0)
-            guard right > left else { self.panel.orderOut(nil); self.lastSlot = nil; self.diagnostic("No Finder window open"); return }
-            guard value.atIndex(7)?.booleanValue == true else { self.panel.orderOut(nil); self.diagnostic("Finder toolbar is hidden"); return }
-            // Only show inside the real toolbar slot; never cover file rows or sidebar.
-            let bounds = (2...5).map { value.atIndex($0)?.int32Value ?? 0 }
-            let measured = ToolbarPlacement.current()
-            if let measured {
-                self.lastSlot = measured
-                self.lastBounds = bounds
-                self.lastSlotTime = Date()
-            }
-            // Briefly tolerate an AX focus transition only for unchanged window bounds.
-            let cached = self.lastBounds == bounds && Date().timeIntervalSince(self.lastSlotTime) < 2 ? self.lastSlot : nil
-
-            // Do not guess toolbar occupancy: an approximate width can cover custom buttons.
-            guard let slot = measured ?? cached else {
-                self.panel.orderOut(nil)
-                self.diagnostic("Toolbar placement unavailable: " + ToolbarPlacement.reason + ". Re-add this final app in Accessibility.")
+            if let error {
+                // A transient Finder timeout is not a navigation or focus change.
+                // Keep the last known folder and active draft; retry on the next poll.
+                self.model.message = self.errorText(error)
+                self.diagnostic(self.model.message)
+                if self.denied { self.finderToolbarVisible = false; self.panel.orderOut(nil) }
                 return
             }
-            self.diagnostic(measured != nil ? "Visible — automatic toolbar fit" : (cached != nil ? "Keeping toolbar visible during focus transition" : "Waiting for exact toolbar placement"))
-            let frame = NSRect(x: slot.minX, y: primary.frame.maxY - slot.maxY, width: slot.width, height: slot.height)
-            self.panel.setFrame(frame, display: true)
-            let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-            if front == "com.apple.finder" || front == Bundle.main.bundleIdentifier { self.panel.orderFrontRegardless() }
+            guard let value, value.numberOfItems == 8 else { return }
+            self.finderToolbarVisible = value.atIndex(7)?.booleanValue == true && value.atIndex(8)?.int32Value != 0
+            let path = value.atIndex(1)?.stringValue ?? ""
+            self.model.receiveFolder(path.isEmpty ? nil : URL(fileURLWithPath: path).standardizedFileURL, windowID: value.atIndex(8)?.int32Value ?? 0)
+            self.model.message = path.isEmpty ? "Open a regular folder. Recents and search views have no directory path." : ""
+            self.positionPanel()
         }
     }
 }
