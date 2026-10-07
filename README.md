@@ -4,28 +4,31 @@ A lightweight native macOS utility that adds a Windows-style address field over 
 
 Click the current folder to edit its path, navigate through clickable breadcrumbs, or open Terminal in the current folder. The field uses Finder’s toolbar positions to fit between its navigation buttons and other controls.
 
-## Version 1.0.1
+## Version 1.2.0
 
-This development preview improves the address bar’s fit and finish:
+This development preview refines the toolbar appearance while preserving the existing placement, sizing, folder tracking, and Terminal behavior:
 
-- Full-screen placement follows Finder’s navigation buttons without being pushed below the menu-bar area.
-- A slimmer pill, soft shadow, and frosted background blend with the toolbar and obscure the folder title underneath.
-- Native system typography and vertically centered path editing improve readability.
-- Switching Finder windows clears unfinished path edits and keeps the displayed folder synchronized.
+- Removed the refresh and recent-locations buttons, preserving their spacing and the Terminal button's position.
+- Fixed the white editing background in dark mode.
+- Matched the editing fill and focus-ring palette to reference screenshots of Finder's search field, with a softer, 3-point focus border.
+- Kept the same interior color when viewing and editing a path in each theme.
+- Removed the drop shadow for a flatter appearance within Finder's toolbar.
 
-See the [changelog](CHANGELOG.md) for release history. The app remains a locally signed development preview; no Developer ID-signed or notarized installer is provided.
+Recent locations remain available with **F4**, refresh with **F5**, and editing suggestions with **Down Arrow**. On media-key keyboards, use **Fn-F4/Fn-F5**.
+
+See the [1.2.0 release notes](docs/RELEASE-1.2.0.md) and [changelog](CHANGELOG.md). The app remains a locally signed development preview; no Developer ID-signed or notarized installer is provided.
 
 ## See it in action
 
 https://github.com/user-attachments/assets/cd8eb267-39d4-40e5-b450-a1c2fd3660e1
 
-Play the demo directly above, or [watch on YouTube](https://www.youtube.com/watch?v=-PFp8Z7WMU0).
+The demo shows an earlier version; 1.2.0 removes the refresh/history buttons and updates the appearance. Play it above, or [watch on YouTube](https://www.youtube.com/watch?v=-PFp8Z7WMU0).
 
 > **Development preview:** this is a separate overlay, not an embedded Finder toolbar extension. It requires Accessibility and Automation permissions. Custom toolbar layouts and full-screen transitions may need further testing.
 
 ## Features
 
-- Click-to-edit paths in a frosted, rounded field with native system typography.
+- Click-to-edit paths in a theme-aware, rounded field with native system typography.
 - Clickable parent folders and subfolder menus.
 - Folder suggestions, recent locations, and copy-path actions.
 - Absolute and relative paths, `~`, `..`, quoted paths, and local file URLs.
@@ -71,6 +74,22 @@ open "Finder Address Bar.app"
 ```
 
 Skip `xcode-select --install` if the tools are already installed. The generated app stays in the project folder and is excluded from Git. Keep it at a permanent location before enabling launch at login.
+
+## Upgrade an existing installation
+
+1. Choose **Quit Finder Address Bar** from its menu-bar menu.
+2. In your existing repository folder, run:
+
+   ```sh
+   git pull --ff-only origin main
+   ./build.sh
+   ./test.sh
+   open "Finder Address Bar.app"
+   ```
+
+If you have your own source changes, commit or stash them before pulling. Build in the same permanent folder to keep the app location consistent. If you run a separately copied app, replace that copy with the rebuilt app before opening it; do not run both copies.
+
+Your saved recent paths and preferences are retained. If the bar stays hidden after updating, remove and re-add the rebuilt app in **System Settings → Privacy & Security → Accessibility**. See the permissions notes below.
 
 ## First-run permissions
 

@@ -77,6 +77,15 @@ final class AddressView: NSView, NSTextFieldDelegate, NSMenuDelegate {
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    // Shared fill keeps viewing and editing consistent with Finder's search field.
+    private func barFill(dark: Bool) -> NSColor {
+        dark ? NSColor(srgbRed: 33 / 255, green: 37 / 255, blue: 37 / 255, alpha: 1)
+             : NSColor(srgbRed: 250 / 255, green: 250 / 255, blue: 250 / 255, alpha: 1)
+    }
+    private func editingRing(dark: Bool) -> NSColor {
+        dark ? NSColor(srgbRed: 72 / 255, green: 123 / 255, blue: 160 / 255, alpha: 1)
+             : NSColor(srgbRed: 162 / 255, green: 191 / 255, blue: 245 / 255, alpha: 1)
+    }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); updateBackdrop(); needsDisplay = true }
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
@@ -87,44 +96,40 @@ final class AddressView: NSView, NSTextFieldDelegate, NSMenuDelegate {
 
         let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
 
-        // Native toolbar button drop shadow & fill
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(isDark ? 0.35 : 0.12)
-        shadow.shadowOffset = NSSize(width: 0, height: -2.0)
-        shadow.shadowBlurRadius = 8.0
-        shadow.set()
-
-        let fillColor: NSColor
-        if model.editing {
-            fillColor = NSColor.textBackgroundColor
-        } else if isDark {
-            fillColor = NSColor(white: 0.22, alpha: 0.97)
-        } else {
-            fillColor = NSColor(white: 1.0, alpha: 0.97)
-        }
+        // Flat fill blends into Finder's toolbar without a floating drop shadow.
+        let fillColor = barFill(dark: isDark)
         fillColor.setFill()
         pillPath.fill()
-        NSGraphicsContext.restoreGraphicsState()
 
         // Native subtle border
         let strokeColor: NSColor
         if model.editing {
-            strokeColor = NSColor.controlAccentColor
+            strokeColor = editingRing(dark: isDark)
         } else if isDark {
             strokeColor = NSColor(white: 1.0, alpha: 0.16)
         } else {
             strokeColor = NSColor(white: 0.0, alpha: 0.12)
         }
         strokeColor.setStroke()
-        pillPath.lineWidth = model.editing ? 1.5 : 0.75
-        pillPath.stroke()
+        if model.editing {
+            // Draw the focus ring outside the pill without moving or resizing it.
+            let focusPath = NSBezierPath(roundedRect: pill.insetBy(dx: -1.5, dy: -1.5), xRadius: radius + 1.5, yRadius: radius + 1.5)
+            focusPath.lineWidth = 3
+            focusPath.stroke()
+        } else {
+            pillPath.lineWidth = 0.75
+            pillPath.stroke()
+        }
     }
     func updateBackdrop() {
         let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        tint.backgroundColor = (model.editing ? NSColor.textBackgroundColor : NSColor(white: dark ? 0.15 : 0.98, alpha: 0.98)).cgColor
-        backdrop.layer?.borderWidth = model.editing ? 1.5 : 0.75
-        backdrop.layer?.borderColor = (model.editing ? NSColor.controlAccentColor : NSColor.white.withAlphaComponent(dark ? 0.16 : 0.85)).cgColor
+        // Layer colors are fixed CGColors; resolve them using this view's appearance,
+        // including when editing or changing themes outside a drawing callback.
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            tint.backgroundColor = barFill(dark: dark).cgColor
+            backdrop.layer?.borderWidth = model.editing ? 0 : 0.75
+            backdrop.layer?.borderColor = NSColor.white.withAlphaComponent(dark ? 0.16 : 0.85).cgColor
+        }
     }
     func edit() {
         model.text = model.folder?.path ?? ""
@@ -156,11 +161,10 @@ final class AddressView: NSView, NSTextFieldDelegate, NSMenuDelegate {
         let terminal = BarButton("Open Terminal here", symbol: "terminal") { [weak self] in self?.model.terminal() }
         terminal.isEnabled = model.folder != nil
         right -= 23; place(terminal, x: right, width: 23)
-        let history = BarButton("Recent locations", symbol: "chevron.down") { [weak self] in self?.showChoices() }
-        right -= 19; place(history, x: right, width: 19)
+        // Preserve the existing path layout with the two toolbar buttons removed.
+        right -= 19
         if pill.width >= 230 && !model.editing {
-            let refresh = BarButton("Refresh Finder", symbol: "arrow.clockwise") { [weak self] in self?.model.refreshFolder?() }
-            right -= 21; place(refresh, x: right, width: 21)
+            right -= 21
         }
         if !model.feedback.isEmpty {
             let error = BarButton("Show error", symbol: "exclamationmark.circle") { [weak self] in
